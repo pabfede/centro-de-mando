@@ -7,7 +7,6 @@ const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly'];
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  scopes: SCOPES,
   offlineAccess: false,
 });
 
@@ -30,6 +29,16 @@ export function useGoogleCalendarAuth() {
         await GoogleSignin.signOut();
       }
       await GoogleSignin.signIn();
+      // calendar.readonly is a sensitive scope — signIn() alone only grants basic
+      // profile/email. It must be requested explicitly via addScopes(), which is
+      // what actually shows Google's permission screen for it.
+      await GoogleSignin.addScopes({ scopes: SCOPES });
+      // addScopes() grants the new scope but getTokens() can still hand back the
+      // previously cached access token, minted before the grant, which the
+      // Calendar API then rejects. Clear it so the next getTokens() mints a
+      // fresh one that actually carries the new scope.
+      const { accessToken: staleToken } = await GoogleSignin.getTokens();
+      await GoogleSignin.clearCachedAccessToken(staleToken);
       setStatus('connected');
     } catch (error) {
       if (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_CANCELLED) return;
