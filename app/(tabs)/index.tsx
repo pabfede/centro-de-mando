@@ -1,19 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { ActivityIndicator, Button, FlatList, StyleSheet, Text, View } from 'react-native';
-import { fetchEvents } from '../../src/features/calendar/api';
 import { useGoogleCalendarAuth } from '../../src/features/calendar/googleAuth';
 import { supabase } from '../../src/lib/supabase';
 
 export default function CalendarioScreen() {
-  const { status, connect, getValidAccessToken } = useGoogleCalendarAuth();
+  const { status, connect, fetchCalendarEvents } = useGoogleCalendarAuth();
 
   const { data: events, isLoading } = useQuery({
     queryKey: ['calendar_events'],
-    queryFn: async () => {
-      const token = await getValidAccessToken();
-      if (!token) return [];
-      return fetchEvents(token);
-    },
+    queryFn: fetchCalendarEvents,
     enabled: status === 'connected',
   });
 

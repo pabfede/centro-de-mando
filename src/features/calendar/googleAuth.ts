@@ -1,6 +1,7 @@
 import { GoogleSignin, isErrorWithCode, statusCodes } from '@react-native-google-signin/google-signin';
 import { useEffect, useState } from 'react';
-import type { CalendarIntegrationStatus } from './types';
+import { fetchEvents } from './api';
+import type { CalendarEvent, CalendarIntegrationStatus } from './types';
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly'];
 
@@ -34,17 +35,30 @@ export function useGoogleCalendarAuth() {
     setStatus('disconnected');
   }
 
-  async function getValidAccessToken(): Promise<string | null> {
+  // Combines token retrieval + the actual API call so an auth failure at either
+  // step (revoked token locally, or rejected server-side on the API call itself)
+  // consistently surfaces as needs_reauth instead of silently returning no events.
+  async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
+    let accessToken: string;
     try {
-      const { accessToken } = await GoogleSignin.getTokens();
-      setStatus('connected');
-      return accessToken;
+      accessToken = (await GoogleSignin.getTokens()).accessToken;
     } catch {
-      // Revoked / expired beyond silent refresh — Play Services couldn't mint a fresh token.
       setStatus('needs_reauth');
-      return null;
+      return [];
+    }
+
+    try {
+      const events = await fetchEvents(accessToken);
+      setStatus('connected');
+      return events;
+    } catch (error) {
+      if (error instanceof Error && error.message === 'invalid_grant') {
+        setStatus('needs_reauth');
+        return [];
+      }
+      throw error;
     }
   }
 
-  return { status, connect, disconnect, getValidAccessToken };
+  return { status, connect, disconnect, fetchCalendarEvents };
 }
