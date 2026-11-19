@@ -21,6 +21,8 @@ npm install @supabase/supabase-js @tanstack/react-query
 git init
 ```
 
+**Superseded (2026-11-19):** `expo-auth-session`, `expo-web-browser`, and `expo-crypto` were later uninstalled — see section 3 below for why the Calendar OAuth approach changed to `@react-native-google-signin/google-signin`, which needs none of them.
+
 Folder structure:
 ```
 personalApp/
@@ -113,17 +115,20 @@ Schema managed via Supabase CLI (`supabase migration new ...`, SQL files committ
 
 **MFA cut from Phase 1 (Roast Board, round 9, 2026-11-18):** TOTP/2FA adds no real security for a single-device, local-only, single-user app — there's no threat model where it reduces risk (whoever has the unlocked device already has access; whoever doesn't, can't get far regardless), and it was costing an estimated 5-10 of the 20-40 scaffolding hours for zero marginal protection. PROJECT.md's blanket "2FA/MFA obligatorio" requirement is deferred, not deleted: it re-applies the moment a second device or second user is ever added, since that's exactly the point where the threat model changes. Until then, email/password + RLS + device-level lock screen is the right-sized control.
 
-## 3. Google Calendar OAuth (highest external risk — build last)
+## 3. Google Calendar OAuth (highest external risk — build last) — IMPLEMENTED, architecture rewritten mid-build
 
-**Client type: native iOS/Android OAuth client IDs (no client secret exists for these types)**, not a "Web application" client type — this is what PROJECT.md's PKCE requirement already mandates, not an open choice. Practical consequence: **Notes and Kanban can be developed in plain Expo Go; Calendar work requires switching to a custom dev client build** (`npx expo run:ios` / `run:android`, or an EAS dev build), since the OAuth redirect must land on an app whose bundle id/package matches the registered native client.
+**Superseded (2026-11-19):** the original plan below (native Android/iOS OAuth client + `expo-auth-session` browser-redirect PKCE flow, custom scheme redirect) is **dead** — Google deprecated custom URI scheme redirects for Android OAuth clients (app-impersonation risk), which made `/o/oauth2/v2/auth` 404 on *any* request from that client type, reproduced independently in a browser with the exact same client_id/params. This was discovered only after building and testing against the real EAS dev client, not from documentation review beforehand — a reminder that "native OAuth via expo-auth-session" guidance from pretraining is stale and must be verified against current Google docs, exactly as AGENTS.md's Expo warning says to do for Expo APIs.
 
-Concrete steps:
-1. Google Cloud Console: create iOS and Android OAuth client IDs; set OAuth consent screen scope to `https://www.googleapis.com/auth/calendar.readonly` only; **set publishing status to "In production" immediately** — the resulting "Google hasn't verified this app" click-through warning is expected and permanent for a personal project, not a bug.
-2. `src/features/calendar/googleAuth.ts`: `expo-auth-session`'s `useAutoDiscovery('https://accounts.google.com')` + `useAuthRequest` with `iosClientId`/`androidClientId` — no `clientSecret` field.
-3. On successful PKCE code exchange (`exchangeCodeAsync`), store `access_token`/`refresh_token`/`expiry` in `expo-secure-store` — never `AsyncStorage`.
-4. `src/features/calendar/api.ts`: `fetchEvents(timeMin, timeMax)` against `GET .../calendar/v3/calendars/primary/events`; refresh the access token via the token endpoint when expired (still no secret required for native clients).
-5. **`invalid_grant` handling — must be built and actually tested, not assumed:** catch `invalid_grant` on refresh/fetch, clear stored tokens, set a `calendarIntegrationStatus` to `'needs_reauth'` (in `reauthState.ts`), and show a banner in `calendario.tsx` ("Tu conexión con Google Calendar necesita renovarse") with a "Reconectar" button that re-triggers the auth flow. No cached data exists to corrupt, since events are always fetched fresh.
-6. **Manual revocation test (required, not optional):** revoke access at `myaccount.google.com/permissions`, reopen the Calendar tab, confirm no crash, confirm the reauth banner appears, confirm "Reconectar" restores access, confirm no stale data is shown as live.
+**What's actually implemented:** `@react-native-google-signin/google-signin` (Expo's current recommended path for this case), which uses Android's native Google Sign-In SDK instead of a browser redirect. Google Cloud Console needs **two** OAuth clients, not one: the original **Android**-type client (package name + SHA-1, no redirect URI field — used implicitly by Play Services) plus an additional **Web**-type client whose ID is passed as `webClientId` to `GoogleSignin.configure()` (no redirect URI needed there either; it's only used as an audience identifier).
+
+Concrete flow, as built in `src/features/calendar/googleAuth.ts`:
+1. `GoogleSignin.configure({ webClientId, offlineAccess: false })` at module load.
+2. `connect()`: `hasPlayServices()` → if a cached local session exists, `signOut()` first (otherwise `signIn()` can resolve instantly from cache without ever showing Google's screens — looks like "nothing happens" and never re-grants anything) → `signIn()` (basic profile/email only) → `addScopes({ scopes: ['...calendar.readonly'] })` (sensitive scopes are **not** granted by `signIn()` alone, even if passed to `configure()` — they need this explicit call, which is what actually shows Google's permission screen for Calendar) → then **immediately invalidate the just-cached token**: `getTokens()` once, `clearCachedAccessToken(thatToken)`, because `addScopes()` grants the scope server-side but a subsequent `getTokens()` can still hand back the access token that was cached *before* the grant, which the Calendar API then rejects with 401. Without this step the reconnect flow silently loops: scope granted, token still stale, API still 401s.
+3. `fetchCalendarEvents()` (combines token fetch + the actual API call in one place, deliberately — see below): `getTokens()` → `GET .../calendar/v3/calendars/primary/events`. No refresh-token management needed; the SDK handles silent renewal via Play Services internally.
+4. **Both failure points must flip status to `needs_reauth` — a bug found during the manual revocation test (below):** a 401 from the *API call itself* (token looked valid locally, Google rejected it server-side, e.g. after revocation) is just as real a failure as `getTokens()` throwing outright. The first version of this code only caught the latter, so the Calendar screen silently rendered "Sin eventos esta semana" instead of the reauth banner after revocation — exactly the "stale data shown as live" failure mode this test exists to catch. Fixed by having `fetchCalendarEvents()` catch both.
+5. **Manual revocation test (required, not optional) — now passes:** revoke access at `myaccount.google.com/permissions` → reopen the Calendar tab → no crash, reauth banner appears (not a silently-empty list) → **Reconectar** forces local sign-out, shows the real Google account picker, the scope consent screen, invalidates the stale token → events load again.
+
+**Still true from the original plan, unaffected by the rewrite:** OAuth consent screen published to "In production" (not "Testing") with `calendar.readonly` as the only requested scope; unverified-app warning is expected and accepted, correct for a single-user app under the 100-user verification threshold.
 
 ## 4. Notes module
 
