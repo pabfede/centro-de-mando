@@ -22,6 +22,13 @@ export function useGoogleCalendarAuth() {
   async function connect() {
     try {
       await GoogleSignin.hasPlayServices();
+      // Sign out of the cached local session first: after a server-side revocation,
+      // signIn() alone can resolve instantly from the local cache without ever
+      // showing Google's consent screen, which looks like "nothing happens" and
+      // never actually re-grants access.
+      if (GoogleSignin.getCurrentUser()) {
+        await GoogleSignin.signOut();
+      }
       await GoogleSignin.signIn();
       setStatus('connected');
     } catch (error) {
