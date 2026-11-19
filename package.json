@@ -1,0 +1,33 @@
+{
+  "name": "centro-de-mando",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.1",
+    "@tanstack/react-query": "^5.108.0",
+    "expo": "~58.0.26",
+    "expo-auth-session": "~58.0.19",
+    "expo-constants": "~58.0.16",
+    "expo-crypto": "~58.0.8",
+    "expo-dev-client": "~58.0.21",
+    "expo-linking": "~58.0.17",
+    "expo-router": "~58.0.32",
+    "expo-secure-store": "~58.0.3",
+    "expo-status-bar": "~58.0.5",
+    "expo-web-browser": "~58.1.0",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "private": true
+}

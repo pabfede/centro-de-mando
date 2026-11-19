@@ -1,0 +1,19 @@
+{
+  "enabledPlugins": {
+    "expo@claude-plugins-official": true
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-$PWD}\" 2>/dev/null; if [ -z \"$CLAUDE_SIMPLIFY_HOOK_ACTIVE\" ] && [ -n \"$(git status --porcelain 2>/dev/null)\" ]; then CLAUDE_SIMPLIFY_HOOK_ACTIVE=1 claude -p \"/simplify\" --permission-mode acceptEdits 2>/dev/null || true; fi",
+            "timeout": 300,
+            "statusMessage": "Running /simplify on this turn's changes..."
+          }
+        ]
+      }
+    ]
+  }
+}
